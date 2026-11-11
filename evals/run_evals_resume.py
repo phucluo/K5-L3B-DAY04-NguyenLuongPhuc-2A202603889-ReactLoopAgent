@@ -55,7 +55,7 @@ def process_cases(
         return ControlledProvider(
             base, gate, session["events"], case_id, stage,
             on_update=persist,
-            output_limit=config.get("max_completion_tokens", 2048),
+            output_limit=config["max_tokens"],
         )
 
     persist()
@@ -169,21 +169,21 @@ def process_cases(
 
 def make_config(bonus=False, max_steps=None):
     return {
-        "provider": "openai",
-        "model": "gpt-6-luna",
-        "judge_provider": "openai",
-        "judge_model": "gpt-6-luna",
+        "provider": "gemini",
+        "model": "gemini-3.8-flash",
+        "judge_provider": "gemini",
+        "judge_model": "gemini-3.5-flash-lite",
         "max_steps": (
             max_steps if max_steps is not None
             else (16 if bonus else 8)
         ),
         "dataset": "bonus" if bonus else "core",
         "mode": "snapshot",
-        "reasoning_effort": "none",
-        "max_completion_tokens": 2048,
+        "reasoning_effort": "low",
+        "max_tokens": 4096,
         "workers": 1,
         "min_interval_seconds": 7.0,
-        "token_budget_per_minute": 48_000,
+        "token_budget_per_minute": 400_000,
         "python_version": sys.version.split()[0],
     }
 
@@ -207,7 +207,7 @@ def show_status(report):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Eval snapshot có checkpoint, dùng OpenAI gpt-6-luna."
+            description="Eval snapshot có checkpoint, dùng Gemini."
     )
     parser.add_argument("--output", required=True)
     parser.add_argument("--bonus", action="store_true")
@@ -224,8 +224,8 @@ def main():
     if config["max_steps"] < 1:
         parser.error("--max-steps phải >= 1")
     if args.max_requests is not None:
-        if not 1 <= args.max_requests <= 50:
-            parser.error("--max-requests phải từ 1 đến 50")
+        if not 1 <= args.max_requests <= 600:
+            parser.error("--max-requests phải từ 1 đến 600")
     if not args.check_only and args.max_requests is None:
         parser.error("Cần chỉ định --max-requests khi chạy thật")
     if args.case:

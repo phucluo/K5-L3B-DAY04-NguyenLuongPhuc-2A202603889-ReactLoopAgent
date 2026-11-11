@@ -53,6 +53,11 @@ class Provider:
         if self.name == 'openai' and self.model == 'gpt-6-luna':
             payload['reasoning_effort'] = 'none'
             payload['max_completion_tokens'] = 2048
+        elif self.name == 'gemini' and self.model in (
+            'gemini-3.8-flash', 'gemini-3.5-flash-lite'
+        ):
+            payload['reasoning_effort'] = 'low'
+            payload['max_tokens'] = 4096
 
         if schemas:
             payload['tools'] = schemas

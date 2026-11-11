@@ -49,6 +49,11 @@ class Provider:
         if self.name == 'anthropic':
             return self._anthropic(messages, schemas)
         payload = {'model': self.model, 'messages': messages}
+
+        if self.name == 'openai' and self.model == 'gpt-6-luna':
+            payload['reasoning_effort'] = 'none'
+            payload['max_completion_tokens'] = 2048
+
         if schemas:
             payload['tools'] = schemas
         headers = {'Authorization': f'Bearer {self.key}'}

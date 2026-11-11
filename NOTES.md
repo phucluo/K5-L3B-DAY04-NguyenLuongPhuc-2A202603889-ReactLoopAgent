@@ -69,7 +69,7 @@ Giới hạn: kiểm tra chỉ bảo đảm answer chứa ít nhất một URL i
 
 Hai lượt có cùng config: Gemini agent gemini-3.8-flash, judge gemini-3.5-flash-lite, core snapshot, max_steps=8 và các tham số còn lại. Code agent khác nhau theo cải tiến; manifest của từng lượt được giữ nguyên.
 
-| Chỉ số | eval_before.json | eval_after.json |
+| Chỉ số | eval_before.json | eval_after_source_gate.json |
 |---|---|---|
 | Case hoàn thành và được chấm | 22/22 | 22/22 |
 | Điểm tổng | 100.0 | 100.0 |
@@ -117,7 +117,7 @@ Phân biệt token:
 - Ba tests bonus offline đã pass không tương đương hoàn thành 10 case eval bonus.
 
 ## 6. Bonus
-
+Số liệu phần này thuộc eval_bonus_source_gate.json, chạy với phiên bản code tại commit 7b1802d.
 ### Cấu hình và kết quả
 
 - Dataset bonus, snapshot, max_steps=16; giữ nguyên cặp Gemini và các tham số còn lại.
@@ -147,3 +147,21 @@ Phân biệt token:
 - B9 đưa thêm URL trang trạng thái tổng quan từ kiến thức model; các URL này không được tools xác minh trong trace. Không coi chúng là nguồn đã quan sát.
 - Các lỗi 429 trong bộ bonus là giả lập với retry_after_seconds=0. Chưa kiểm chứng xử lý Retry-After khác 0 từ status API thật; loop chưa có logic riêng để phân tích và chờ giá trị đó.
 - Snapshot và một lượt eval chưa chứng minh độ ổn định khi chạy live. Không có kết quả live trong báo cáo này.
+
+## 7. Phiên bản cuối: dừng provider sau HTTP 429 thật
+
+Sau khi rà GUIDE, bổ sung chính sách xử lý HTTP 429 trong bonus/tools.py:
+
+- Khi status API thật trả HTTP 429, giữ Retry-After trong observation và đặt retriable=false.
+- Dừng các HTTP request tiếp theo tới provider đó trong cùng instance BonusTools/run, kể cả đổi component hoặc gọi get_incident_details.
+- Nếu model vẫn yêu cầu gọi lại, trả observation đã lưu với request_skipped=true.
+- Các provider còn lại vẫn được phép kiểm tra.
+- Chọn dừng thay vì chờ; không cần phân tích hoặc ngủ theo Retry-After.
+- Các scenario 429 giả lập vẫn giữ nguyên hành vi.
+
+Kiểm tra sau thay đổi: 44 tests chính và 3 tests bonus đều OK. Hai tests mới dùng mock HTTP, kiểm tra header dạng số, ngày giờ và trường hợp không có header; xác nhận không phát request tiếp cho provider bị chặn và provider khác vẫn hoạt động. Đây không phải thử nghiệm trên mạng live.
+
+Quản lý phiên bản kết quả:
+- eval_before.json: giữ nguyên baseline.
+- eval_after_source_gate.json và eval_bonus_source_gate.json: giữ nguyên toàn bộ kết quả phiên bản trước.
+- eval_after.json và eval_bonus.json của code cuối chưa chạy; sẽ ghi nhận toàn bộ kết quả mới, kể cả điểm thấp hoặc 0, không ghép case giữa các phiên bản.

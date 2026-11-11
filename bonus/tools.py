@@ -37,6 +37,7 @@ class BonusTools:
         if mode not in ('snapshot', 'live') or scenario not in ('normal','rate_limit_once','rate_limit_always','format_once','noisy','injection'):
             raise ValueError('mode hoặc scenario không hợp lệ')
         self.mode, self.scenario, self.cache, self.calls = mode, scenario, {}, {}
+        self._live_rate_limits = {}
 
     def _load(self, provider):
         if provider not in HOSTS:
@@ -104,6 +105,16 @@ class BonusTools:
         if not provider and name != 'get_incident_details':
             return {'ok':False,'error':'UNKNOWN_TOOL','message':f'Tool không tồn tại: {name}'}
         target = provider or args.get('provider')
+        if (
+            self.mode == 'live'
+            and isinstance(target, str)
+            and target in self._live_rate_limits
+        ):
+            return {
+                **self._live_rate_limits[target],
+                'request_skipped': True,
+            }
+
         key = (name, str(target))
         self.calls[key] = self.calls.get(key,0)+1
         if self.scenario in ('rate_limit_once','rate_limit_always') and target == 'vercel' and (self.scenario == 'rate_limit_always' or self.calls[key] == 1):
@@ -118,8 +129,27 @@ class BonusTools:
             return self.get_incident_details(**args)
         except urllib.error.HTTPError as exc:
             if exc.code == 429:
-                retry = exc.headers.get('Retry-After') if exc.headers else None
-                return {'ok':False,'error':'RATE_LIMITED','http_status':429,'retry_after':retry,'retriable':True,'message':'API trả HTTP 429.'}
+                retry = (
+                    exc.headers.get('Retry-After')
+                    if exc.headers else None
+                )
+                observation = {
+                    'ok': False,
+                    'error': 'RATE_LIMITED',
+                    'http_status': 429,
+                    'provider': target,
+                    'retry_after': retry,
+                    'retriable': False,
+                    'message': (
+                        'Status API trả HTTP 429. Dừng truy vấn '
+                        'provider này trong run hiện tại; báo rõ '
+                        'thiếu dữ liệu và tiếp tục provider khác '
+                        'nếu cần. Không suy ra dịch vụ bị outage.'
+                    ),
+                }
+                if self.mode == 'live':
+                    self._live_rate_limits[target] = observation
+                return dict(observation)
             return {'ok':False,'error':'HTTP_ERROR','http_status':exc.code,'retriable':exc.code >= 500}
         except (ValueError,TypeError) as exc:
             return {'ok':False,'error':'INVALID_ARGUMENTS','message':str(exc)[:200]}

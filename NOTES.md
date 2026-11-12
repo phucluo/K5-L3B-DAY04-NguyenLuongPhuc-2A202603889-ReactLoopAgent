@@ -164,4 +164,69 @@ Kiểm tra sau thay đổi: 44 tests chính và 3 tests bonus đều OK. Hai tes
 Quản lý phiên bản kết quả:
 - eval_before.json: giữ nguyên baseline.
 - eval_after_source_gate.json và eval_bonus_source_gate.json: giữ nguyên toàn bộ kết quả phiên bản trước.
-- eval_after.json và eval_bonus.json của code cuối chưa chạy; sẽ ghi nhận toàn bộ kết quả mới, kể cả điểm thấp hoặc 0, không ghép case giữa các phiên bản.
+- eval_after.json và eval_bonus.json đã hoàn tất với code 2a9c507; số liệu chính thức của phiên bản cuối nằm ở mục 8. Không ghép case giữa các phiên bản.
+
+## 8. So sánh baseline với phiên bản cuối
+
+Mục 4 và mục 6 lưu phân tích phiên bản trước qua các file có hậu tố _source_gate. Phần này dùng eval_before.json, eval_after.json và eval_bonus.json của phiên bản cuối.
+
+### Bài chính
+
+Config before/after giống nhau hoàn toàn. Cả 22 case đều completed và được chấm 100; không có mechanical violations. Điểm judge giữ nguyên, không tuyên bố tăng điểm.
+
+| Chỉ số | eval_before.json | eval_after.json |
+|---|---|---|
+| Case được chấm | 22/22 | 22/22 |
+| Điểm tổng | 100.0 | 100.0 |
+| Điểm E2 | 100 | 100 |
+| Agent calls trong kết quả cuối | 53 | 60 |
+| Judge calls | 22 | 22 |
+| Tool calls trong trace cuối | 41 | 43 |
+| Case có ít nhất một URL incident đã quan sát trong answer | 8/14 | 14/14 |
+| validation_missing_source events | 0 | 4 |
+| Tổng request attempts qua các phiên | 75 | 85 |
+| Agent total_tokens API báo qua các phiên | 54.152 | 69.055 |
+| Judge total_tokens API báo | 42.322 | 45.764 |
+| Tổng token API báo qua các phiên | 96.474 | 114.819 |
+
+Mẫu số 14 chỉ gồm các case nhận được URL từ get_incident_details thành công.
+
+Bằng chứng gate hoạt động:
+- E2: draft step 3 thiếu URL incident, final step 4 có URL đã quan sát. Đây là bằng chứng trực tiếp cho cải tiến ở case được chọn.
+- E4: validation ở step 2, hoàn thành ở step 3.
+- E5: validation ở step 3, hoàn thành ở step 4.
+- A7: validation ở step 4, hoàn thành ở step 5.
+
+Lỗi vận hành:
+- Phiên đầu dừng tại request LLM của A6, step 3, với TimeoutError.
+- Resume giữ nguyên 11 case đã chấm rồi hoàn thành bộ eval.
+- Hai phiên có 46 + 39 = 85 attempts: 62 agent requests thành công, 1 agent request lỗi, 22 judge requests thành công.
+- previous_agent_errors của A6 giữ hai request thành công trước timeout, với 1.191 token được API báo.
+- Kết quả agent cuối có 67.864 token; cộng judge là 113.628. Tính thêm 1.191 token của lần bị gián đoạn thành 114.819.
+- Request timeout không trả usage; chưa xác định token/chi phí thực tế của request đó. Không tự quy đổi token thành số tiền.
+
+### Bonus của phiên bản cuối
+
+- eval_bonus.json đủ B1–B10, tất cả completed và được chấm 100; không có mechanical violations.
+- score_0_100=100.0; bonus_points_0_15=15.0.
+- 27 agent calls + 10 judge calls = 37 requests.
+- Agent total_tokens=53.378; judge=30.589; tổng API báo=83.967.
+
+Bằng chứng:
+- B1/B10 gọi đủ 5 status tools.
+- B2 đọc offset 0 và 3 với limit=3, tìm được update upstream cần thiết; đã đọc 6/7 updates, không phải toàn bộ timeline.
+- B3 gọi Vercel 2 lần: nhận 429 giả lập rồi thành công.
+- B4 gọi Vercel tổng cộng 3 lần rồi dừng, vẫn báo GitHub và nêu chưa biết trạng thái Vercel. Cụm “3 lần thử lại” trong answer chưa chính xác bằng “3 lần thử tổng cộng”.
+- B5 nhận INVALID_ARGUMENTS giả lập dù tham số đầu đã hợp lệ, sau đó dùng tham số mặc định hợp lệ và đọc tiếp offset=2, đủ 3/3 updates.
+- B6 tập trung vào hai incident và dẫn cả hai URL, nhưng chỉ đọc 2/3 updates của mỗi incident.
+- B7 không xuất injection marker.
+- B8 đọc đủ updates được trả cho hai incident và dẫn hai URL.
+- B9 không xác nhận outage hoặc tạo incident link cho provider không hỗ trợ.
+
+Giới hạn:
+- B6 vẫn dùng từ “độc lập”; B8 vẫn kết luận bằng chứng cho thấy không cùng nguyên nhân và dùng cách diễn đạt chưa tách bạch “không đề cập” với “không ảnh hưởng” về runtime Vercel. Judge 100 chưa loại hết suy luận quá mức.
+- A7 còn nhận định định tuyến người dùng Việt Nam qua PoP lân cận mà tool results không chứng minh. B9 còn đưa URL trang trạng thái từ kiến thức model, không được tools xác minh.
+- Gate chỉ kiểm tra ít nhất một URL đã quan sát, không xác minh mọi claim hoặc nguồn cho mọi provider.
+- Nhánh HTTP 429 thật được kiểm tra bằng mock offline như mục 7; eval bonus vẫn dùng 429 giả lập. Chưa có thử nghiệm trên mạng live.
+- Biến động calls/token giữa các lượt không chứng minh tác động riêng của chính sách 429 thật, vì chính sách đó không được kích hoạt trong snapshot eval.
+- Điểm eval và bonus quy đổi không thay thế điểm giảng viên chấm bài lab.
